@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { narrate, adviceFor, type CmdEvent, type CmdStats } from './commander';
 
 export type District =
   | 'api'
@@ -118,6 +119,9 @@ interface CityState {
   slowUntil: number;
   extraCars: number;
   nextChaos: number;
+  cmdLine: string;
+  cmdAt: number;
+  cmdStats: CmdStats;
   deploy: () => void;
   strike: () => void;
   impact: (m: Meteor) => void;
@@ -128,11 +132,19 @@ interface CityState {
   scaleUp: (id: number) => void;
   rollback: () => void;
   triggerChaos: () => void;
+  say: (text: string) => void;
 }
 
 function pushLog(logs: LogEntry[], text: string): LogEntry[] {
   // useCity is declared below; this only runs after the store exists.
   return [{ id: nid(), text, at: useCity.getState().time }, ...logs].slice(0, 6);
+}
+
+function speak(e: CmdEvent) {
+  const st = useCity.getState();
+  const line = narrate(e, st.cmdStats);
+  const advice = adviceFor(e.kind);
+  st.say(advice ? `${line} ${advice}` : line);
 }
 
 export const useCity = create<CityState>((set, get) => ({
@@ -149,6 +161,9 @@ export const useCity = create<CityState>((set, get) => ({
   slowUntil: 0,
   extraCars: 0,
   nextChaos: 55,
+  cmdLine: 'CMDR. OUTAGE reporting. I have read your architecture. We will talk later.',
+  cmdAt: 0,
+  cmdStats: { lost: 0, meteors: 0, scaled: 0, rollbacks: 0, deploys: 0 },
 
   deploy: () => {
     const { buildings, logs } = get();
@@ -164,11 +179,14 @@ export const useCity = create<CityState>((set, get) => ({
     const [bx, bz] = free[Math.floor(Math.random() * free.length)];
     const district = DISTRICTS[Math.floor(Math.random() * DISTRICTS.length)];
     const b = makeBuilding(bx, bz, district, performance.now() / 1000);
+    const stats = get().cmdStats;
     set({
       buildings: [...buildings, b],
       happiness: Math.min(100, get().happiness + 2),
+      cmdStats: { ...stats, deploys: stats.deploys + 1 },
       logs: pushLog(logs, `deployed ${district} service on lot ${bx},${bz}. no tests, obviously.`),
     });
+    speak({ kind: 'deploy', district });
   },
 
   strike: () => {
@@ -199,6 +217,7 @@ export const useCity = create<CityState>((set, get) => ({
       if (dist < 30) return { ...b, health: Math.max(20, b.health - 35) };
       return b;
     });
+    const stats = get().cmdStats;
     set({
       buildings: damaged.filter((b) => b.id !== m.buildingId),
       meteors: meteors.filter((x) => x.id !== m.id),
@@ -206,6 +225,11 @@ export const useCity = create<CityState>((set, get) => ({
       bill: bill + 4200,
       lost: get().lost + (target ? 1 : 0),
       happiness: Math.max(0, happiness - 12),
+      cmdStats: {
+        ...stats,
+        meteors: stats.meteors + 1,
+        lost: stats.lost + (target ? 1 : 0),
+      },
       logs: pushLog(
         logs,
         target
@@ -213,6 +237,7 @@ export const useCity = create<CityState>((set, get) => ({
           : 'meteor hit an empty lot. the on-call team takes the credit.',
       ),
     });
+    speak(target ? { kind: 'meteor', district: target.district } : { kind: 'empty-meteor' });
   },
 
   removeBoom: (id: number) =>
@@ -243,6 +268,7 @@ export const useCity = create<CityState>((set, get) => ({
     const s = get();
     const b = s.buildings.find((x) => x.id === id);
     if (!b) return;
+    const stats = s.cmdStats;
     set({
       buildings: s.buildings.map((x) =>
         x.id === id
@@ -250,8 +276,10 @@ export const useCity = create<CityState>((set, get) => ({
           : x,
       ),
       bill: s.bill + 800,
+      cmdStats: { ...stats, scaled: stats.scaled + 1 },
       logs: pushLog(s.logs, `scaled up ${b.district}. +$800. the cloud thanks you.`),
     });
+    speak({ kind: 'scaleup', district: b.district });
   },
 
   rollback: () => {
@@ -261,11 +289,14 @@ export const useCity = create<CityState>((set, get) => ({
       return;
     }
     const newest = s.buildings.reduce((a, b) => (a.born > b.born ? a : b));
+    const stats = s.cmdStats;
     set({
       buildings: s.buildings.filter((x) => x.id !== newest.id),
       bill: s.bill + 200,
+      cmdStats: { ...stats, rollbacks: stats.rollbacks + 1 },
       logs: pushLog(s.logs, `rolled back ${newest.district}. like it never happened. (it happened.)`),
     });
+    speak({ kind: 'rollback', district: newest.district });
   },
 
   triggerChaos: () => {
@@ -280,6 +311,7 @@ export const useCity = create<CityState>((set, get) => ({
         extraCars: 10,
         logs: pushLog(s.logs, 'RUSH HOUR: traffic spike. the roads are soup.'),
       });
+      speak({ kind: 'rushhour' });
       setTimeout(() => {
         const cur = get();
         set({ extraCars: Math.max(0, cur.extraCars - 10) });
@@ -287,6 +319,7 @@ export const useCity = create<CityState>((set, get) => ({
     } else if (roll < 0.7) {
       // meteor shower: region outage
       set({ logs: pushLog(s.logs, 'REGION OUTAGE: meteor shower inbound. say goodbye to a district.') });
+      speak({ kind: 'shower' });
       const api = get();
       api.strike();
       setTimeout(() => get().strike(), 1200);
@@ -305,7 +338,10 @@ export const useCity = create<CityState>((set, get) => ({
         happiness: Math.max(0, s.happiness - 8),
         logs: pushLog(s.logs, 'DEPENDENCY DOWN: the database district went dark. everything is waiting on it.'),
       });
+      speak({ kind: 'dbdown' });
     }
     set({ nextChaos: now + 45 + Math.random() * 30 });
   },
+
+  say: (text: string) => set({ cmdLine: text, cmdAt: performance.now() }),
 }));

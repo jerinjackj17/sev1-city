@@ -78,8 +78,10 @@ A sarcastic on-call veteran who:
   glowing windows at night, building health + damage beacons + splash
   damage, citizen happiness meter, revenue vs cloud bill, traffic that
   slows under load, in-game clock.
-- **Phase 2 — Chaos engine**: event deck, disasters with visuals,
-  incident timeline feed, response tools (scale, reroute, rollback).
+- **Phase 2 — Chaos engine (done)**: event deck draws every 45-75s
+  (rush hour traffic spike, meteor-shower region outage, database
+  dependency failure), timestamped incident log, response tools:
+  click any building to scale it up, Rollback button.
 - **Phase 3 — AI commander**: LLM narration, per-incident advice,
   weekly review generation, personality that remembers your
   worst moments.
