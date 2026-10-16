@@ -88,8 +88,11 @@ A sarcastic on-call veteran who:
   (smug/tired/feral), typewriter panel UI, on-demand weekly
   performance reviews. narrate() is the seam for a future LLM
   plug-in via the FastAPI backend.
-- **Phase 4 — Game**: win/lose, scenarios (Black Friday, launch
-  day), persistence, leaderboards, tutorial, polish, launch.
+- **Phase 4 — Game (done)**: win/lose (survive 5 days; lose by
+  revolt or bankruptcy), start screen with 3 scenarios (Normalville,
+  Black Friday, Launch Day), field-manual tutorial, best-run
+  persistence, end screens with stats. Deferred: leaderboards and
+  the LLM plug-in for CMDR. OUTAGE (needs backend + key).
 
 ## Rules for the build
 

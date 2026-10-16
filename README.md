@@ -8,7 +8,7 @@ Then chaos: meteors take out whole availability zones, and your cloud
 bill ticks up while you watch. An AI incident commander narrates your
 failures (coming in Phase 3).
 
-Live demo: (deploying)
+Live demo: https://sev1-city.vercel.app
 
 ## Run it
 
