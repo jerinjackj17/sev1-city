@@ -82,9 +82,12 @@ A sarcastic on-call veteran who:
   (rush hour traffic spike, meteor-shower region outage, database
   dependency failure), timestamped incident log, response tools:
   click any building to scale it up, Rollback button.
-- **Phase 3 — AI commander**: LLM narration, per-incident advice,
-  weekly review generation, personality that remembers your
-  worst moments.
+- **Phase 3 — AI commander (done)**: CMDR. OUTAGE, a client-side
+  personality engine with game-aware narration, one piece of real
+  advice per incident, mood that shifts with happiness
+  (smug/tired/feral), typewriter panel UI, on-demand weekly
+  performance reviews. narrate() is the seam for a future LLM
+  plug-in via the FastAPI backend.
 - **Phase 4 — Game**: win/lose, scenarios (Black Friday, launch
   day), persistence, leaderboards, tutorial, polish, launch.
 

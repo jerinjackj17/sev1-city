@@ -400,9 +400,10 @@ function SunRig() {
 function SimTicker() {
   const acc = useRef(0);
   useFrame((_, dt) => {
+    const st = useCity.getState();
+    if (!st.started || st.status !== 'playing') return;
     acc.current += dt;
     if (acc.current >= 0.5) {
-      const st = useCity.getState();
       st.tickSim(acc.current);
       st.tickBill(Math.round(st.buildings.length * acc.current * 2));
       if (performance.now() / 1000 > st.nextChaos) st.triggerChaos();

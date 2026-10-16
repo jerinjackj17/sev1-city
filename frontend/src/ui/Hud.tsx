@@ -18,6 +18,7 @@ export function Hud() {
   const happiness = useCity((s) => s.happiness);
   const revenue = useCity((s) => s.revenue);
   const time = useCity((s) => s.time);
+  const day = useCity((s) => s.day);
   const deploy = useCity((s) => s.deploy);
   const strike = useCity((s) => s.strike);
   const rollback = useCity((s) => s.rollback);
@@ -37,7 +38,7 @@ export function Hud() {
           SEV-1 CITY
         </div>
         <div className="mt-1 text-xs text-slate-300/90">
-          mayor of the on-call · week 1
+          day {day} of 5 · mayor of the on-call
         </div>
       </div>
 

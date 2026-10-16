@@ -10,6 +10,9 @@ export type District =
   | 'cache'
   | 'notify';
 
+export type Scenario = 'normal' | 'blackfriday' | 'launchday';
+export type GameStatus = 'playing' | 'won' | 'lost';
+
 export interface Building {
   id: number;
   bx: number;
@@ -94,13 +97,13 @@ function makeBuilding(bx: number, bz: number, district: District, born: number):
   return { id: nid(), bx, bz, w, d, h, district, born, health: 100 };
 }
 
-function seedCity(): Building[] {
+function seedCity(max = 99): Building[] {
   const spots: Array<[number, number]> = [];
   for (let i = 0; i < GRID; i++)
     for (let j = 0; j < GRID; j++) {
       if (Math.random() < 0.55) spots.push([i, j]);
     }
-  return spots.map(([bx, bz], k) =>
+  return spots.slice(0, max).map(([bx, bz], k) =>
     makeBuilding(bx, bz, DISTRICTS[k % DISTRICTS.length], -10),
   );
 }
@@ -122,6 +125,12 @@ interface CityState {
   cmdLine: string;
   cmdAt: number;
   cmdStats: CmdStats;
+  started: boolean;
+  scenario: Scenario;
+  chaosMult: number;
+  day: number;
+  status: GameStatus;
+  loseReason: string | null;
   deploy: () => void;
   strike: () => void;
   impact: (m: Meteor) => void;
@@ -133,11 +142,34 @@ interface CityState {
   rollback: () => void;
   triggerChaos: () => void;
   say: (text: string) => void;
+  start: (s: Scenario) => void;
 }
 
 function pushLog(logs: LogEntry[], text: string): LogEntry[] {
   // useCity is declared below; this only runs after the store exists.
   return [{ id: nid(), text, at: useCity.getState().time }, ...logs].slice(0, 6);
+}
+
+function saveBest(day: number, won: boolean) {
+  try {
+    const raw = localStorage.getItem('sev1_best');
+    const best = raw ? JSON.parse(raw) : { bestDay: 1, wins: 0 };
+    best.bestDay = Math.max(best.bestDay, Math.min(day, 5));
+    if (won) best.wins += 1;
+    localStorage.setItem('sev1_best', JSON.stringify(best));
+  } catch {
+    // private mode; ignore
+  }
+}
+
+export function loadBest(): { bestDay: number; wins: number } {
+  try {
+    const raw = localStorage.getItem('sev1_best');
+    if (raw) return JSON.parse(raw);
+  } catch {
+    // ignore
+  }
+  return { bestDay: 1, wins: 0 };
 }
 
 function speak(e: CmdEvent) {
@@ -164,6 +196,12 @@ export const useCity = create<CityState>((set, get) => ({
   cmdLine: 'CMDR. OUTAGE reporting. I have read your architecture. We will talk later.',
   cmdAt: 0,
   cmdStats: { lost: 0, meteors: 0, scaled: 0, rollbacks: 0, deploys: 0 },
+  started: false,
+  scenario: 'normal',
+  chaosMult: 1,
+  day: 1,
+  status: 'playing',
+  loseReason: null,
 
   deploy: () => {
     const { buildings, logs } = get();
@@ -180,11 +218,17 @@ export const useCity = create<CityState>((set, get) => ({
     const district = DISTRICTS[Math.floor(Math.random() * DISTRICTS.length)];
     const b = makeBuilding(bx, bz, district, performance.now() / 1000);
     const stats = get().cmdStats;
+    const vcMoney = get().scenario === 'launchday';
     set({
       buildings: [...buildings, b],
       happiness: Math.min(100, get().happiness + 2),
       cmdStats: { ...stats, deploys: stats.deploys + 1 },
-      logs: pushLog(logs, `deployed ${district} service on lot ${bx},${bz}. no tests, obviously.`),
+      logs: pushLog(
+        logs,
+        vcMoney
+          ? `deployed ${district} service on lot ${bx},${bz}. VC money, so it is free.`
+          : `deployed ${district} service on lot ${bx},${bz}. no tests, obviously.`,
+      ),
     });
     speak({ kind: 'deploy', district });
   },
@@ -257,11 +301,44 @@ export const useCity = create<CityState>((set, get) => ({
     const healed = s.buildings.map((b) =>
       b.health < 100 ? { ...b, health: Math.min(100, b.health + dt * 1.5) } : b,
     );
+    const newTime = (s.time + dt * 0.2) % 24;
+    const newDay = newTime < s.time ? s.day + 1 : s.day;
+    let status = s.status;
+    let loseReason = s.loseReason;
+    if (s.status === 'playing') {
+      if (s.happiness <= 0) {
+        status = 'lost';
+        loseReason = 'revolt';
+      } else if (s.bill > 100000) {
+        status = 'lost';
+        loseReason = 'bankrupt';
+      } else if (newDay > 5) {
+        status = 'won';
+      }
+    }
     set({
       buildings: healed,
-      time: (s.time + dt * 0.2) % 24,
+      time: newTime,
+      day: newDay,
+      status,
+      loseReason,
       happiness: Math.max(0, Math.min(100, s.happiness + (70 - s.happiness) * dt * 0.02)),
     });
+    if (s.status === 'playing' && status !== 'playing') {
+      saveBest(newDay, status === 'won');
+      if (status === 'won') {
+        get().say(
+          'WEEK COMPLETE. Five days, zero resignations. I am as surprised as you are. ' +
+            'Request your performance review. You have earned it. Probably.',
+        );
+      } else {
+        get().say(
+          loseReason === 'revolt'
+            ? 'The citizens have voted you out. They are forming a union. Pack your things.'
+            : 'BANKRUPT. The cloud bill ate the city. Somewhere, a FinOps person is smiling.',
+        );
+      }
+    }
   },
 
   scaleUp: (id: number) => {
@@ -306,15 +383,17 @@ export const useCity = create<CityState>((set, get) => ({
     const now = performance.now() / 1000;
     if (roll < 0.35) {
       // rush hour: everything slows down
+      const bf = s.scenario === 'blackfriday';
+      const added = bf ? 16 : 10;
       set({
         slowUntil: now + 25,
-        extraCars: 10,
+        extraCars: added,
         logs: pushLog(s.logs, 'RUSH HOUR: traffic spike. the roads are soup.'),
       });
       speak({ kind: 'rushhour' });
       setTimeout(() => {
         const cur = get();
-        set({ extraCars: Math.max(0, cur.extraCars - 10) });
+        set({ extraCars: Math.max(0, cur.extraCars - added) });
       }, 25000);
     } else if (roll < 0.7) {
       // meteor shower: region outage
@@ -340,8 +419,38 @@ export const useCity = create<CityState>((set, get) => ({
       });
       speak({ kind: 'dbdown' });
     }
-    set({ nextChaos: now + 45 + Math.random() * 30 });
+    set({ nextChaos: now + (45 + Math.random() * 30) * s.chaosMult });
   },
 
   say: (text: string) => set({ cmdLine: text, cmdAt: performance.now() }),
+
+  start: (scenario: Scenario) => {
+    const s = get();
+    if (scenario === 'launchday') {
+      set({
+        started: true,
+        scenario,
+        chaosMult: 1,
+        buildings: seedCity(8),
+        logs: pushLog(s.logs, 'LAUNCH DAY: 8 services, VC money. Deploys are free. Do not waste this.'),
+      });
+    } else {
+      set({
+        started: true,
+        scenario,
+        chaosMult: scenario === 'blackfriday' ? 0.5 : 1,
+        logs: pushLog(
+          s.logs,
+          scenario === 'blackfriday'
+            ? 'BLACK FRIDAY: chaos comes twice as fast. Good luck, mayor.'
+            : 'Week 1 begins. Survive 5 days. Try to keep the bill under six figures.',
+        ),
+      });
+    }
+    try {
+      localStorage.setItem('sev1_seen', '1');
+    } catch {
+      // ignore
+    }
+  },
 }));
