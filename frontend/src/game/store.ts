@@ -18,6 +18,7 @@ export interface Building {
   h: number;
   district: District;
   born: number;
+  health: number;
 }
 
 export interface Meteor {
@@ -88,7 +89,7 @@ function dimsFor(d: District): { w: number; d: number; h: number } {
 
 function makeBuilding(bx: number, bz: number, district: District, born: number): Building {
   const { w, d, h } = dimsFor(district);
-  return { id: nid(), bx, bz, w, d, h, district, born };
+  return { id: nid(), bx, bz, w, d, h, district, born, health: 100 };
 }
 
 function seedCity(): Building[] {
@@ -110,12 +111,16 @@ interface CityState {
   served: number;
   bill: number;
   lost: number;
+  time: number;
+  happiness: number;
+  revenue: number;
   deploy: () => void;
   strike: () => void;
   impact: (m: Meteor) => void;
   removeBoom: (id: number) => void;
   serve: (n: number) => void;
   tickBill: (n: number) => void;
+  tickSim: (dt: number) => void;
 }
 
 function pushLog(logs: LogEntry[], text: string): LogEntry[] {
@@ -130,6 +135,9 @@ export const useCity = create<CityState>((set, get) => ({
   served: 0,
   bill: 1200,
   lost: 0,
+  time: 9.5,
+  happiness: 82,
+  revenue: 0,
 
   deploy: () => {
     const { buildings, logs } = get();
@@ -147,6 +155,7 @@ export const useCity = create<CityState>((set, get) => ({
     const b = makeBuilding(bx, bz, district, performance.now() / 1000);
     set({
       buildings: [...buildings, b],
+      happiness: Math.min(100, get().happiness + 2),
       logs: pushLog(logs, `deployed ${district} service on lot ${bx},${bz}. no tests, obviously.`),
     });
   },
@@ -167,14 +176,25 @@ export const useCity = create<CityState>((set, get) => ({
   },
 
   impact: (m: Meteor) => {
-    const { buildings, meteors, booms, logs, bill } = get();
+    const { buildings, meteors, booms, logs, bill, happiness } = get();
     const target = buildings.find((b) => b.id === m.buildingId);
+    const tx = target ? blockToWorld(target.bx) : m.x;
+    const tz = target ? blockToWorld(target.bz) : m.z;
+    const damaged = buildings.map((b) => {
+      if (b.id === m.buildingId) return b;
+      const dx = blockToWorld(b.bx) - tx;
+      const dz = blockToWorld(b.bz) - tz;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist < 30) return { ...b, health: Math.max(20, b.health - 35) };
+      return b;
+    });
     set({
-      buildings: buildings.filter((b) => b.id !== m.buildingId),
+      buildings: damaged.filter((b) => b.id !== m.buildingId),
       meteors: meteors.filter((x) => x.id !== m.id),
       booms: [...booms, { id: nid(), x: m.x, y: target ? target.h : 2, z: m.z }],
       bill: bill + 4200,
       lost: get().lost + (target ? 1 : 0),
+      happiness: Math.max(0, happiness - 12),
       logs: pushLog(
         logs,
         target
@@ -187,6 +207,24 @@ export const useCity = create<CityState>((set, get) => ({
   removeBoom: (id: number) =>
     set({ booms: get().booms.filter((b) => b.id !== id) }),
 
-  serve: (n: number) => set({ served: get().served + n }),
+  serve: (n: number) => {
+    const s = get();
+    set({
+      served: s.served + n,
+      revenue: s.revenue + n * 0.5,
+      happiness: Math.min(100, s.happiness + n * 0.05),
+    });
+  },
   tickBill: (n: number) => set({ bill: get().bill + n }),
+  tickSim: (dt: number) => {
+    const s = get();
+    const healed = s.buildings.map((b) =>
+      b.health < 100 ? { ...b, health: Math.min(100, b.health + dt * 1.5) } : b,
+    );
+    set({
+      buildings: healed,
+      time: (s.time + dt * 0.2) % 24,
+      happiness: Math.max(0, Math.min(100, s.happiness + (70 - s.happiness) * dt * 0.02)),
+    });
+  },
 }));

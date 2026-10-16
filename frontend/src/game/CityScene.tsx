@@ -39,8 +39,7 @@ function windowsTexture(): THREE.CanvasTexture {
 }
 
 const matCache = new Map<District, THREE.MeshStandardMaterial>();
-function districtMat(d: District): THREE.MeshStandardMaterial {
-  let m = matCache.get(d);
+function districtMat(d: District): THREE.MeshStandardMaterial {  let m = matCache.get(d);
   if (!m) {
     m = new THREE.MeshStandardMaterial({
       color: DISTRICT_COLORS[d],
@@ -53,6 +52,12 @@ function districtMat(d: District): THREE.MeshStandardMaterial {
     matCache.set(d, m);
   }
   return m;
+}
+
+export function setWindowGlow(v: number) {
+  matCache.forEach((m) => {
+    m.emissiveIntensity = v;
+  });
 }
 
 // ---------- ground & roads ----------
@@ -110,7 +115,24 @@ function BuildingMesh({ b }: { b: Building }) {
         <boxGeometry args={[b.w + 0.5, 0.36, b.d + 0.5]} />
         <meshStandardMaterial color="#252c3d" roughness={0.9} />
       </mesh>
+      {b.health < 70 && <DamageBeacon y={b.h + 1.4} />}
     </group>
+  );
+}
+
+function DamageBeacon({ y }: { y: number }) {
+  const mat = useRef<THREE.MeshStandardMaterial>(null);
+  useFrame(({ clock }) => {
+    if (mat.current) {
+      mat.current.emissiveIntensity = 1.5 + 2.5 * (0.5 + 0.5 * Math.sin(clock.elapsedTime * 7));
+    }
+  });
+  return (
+    <mesh position={[0, y, 0]}>
+      <sphereGeometry args={[0.55, 12, 12]} />
+      <meshStandardMaterial ref={mat} color="#ff2222" emissive="#ff2222" emissiveIntensity={2} />
+      <pointLight color="#ff3333" intensity={10} distance={14} />
+    </mesh>
   );
 }
 
@@ -146,7 +168,8 @@ function CarMesh({ spec }: { spec: CarSpec }) {
   useFrame((_, dt) => {
     const g = ref.current;
     if (!g) return;
-    s.current += spec.speed * dt;
+    const load = Math.min(1, useCity.getState().buildings.length / 28);
+    s.current += spec.speed * (1 - 0.5 * load) * dt;
     if (s.current >= spec.per) {
       s.current -= spec.per;
       useCity.getState().serve(1 + Math.floor(Math.random() * 3));
@@ -321,15 +344,50 @@ function Booms() {
   );
 }
 
-// ---------- economy ticker ----------
-function Ticker() {
+// ---------- day/night sun rig ----------
+function SunRig() {
+  const time = useCity((s) => s.time);
+  const ang = ((time - 6) / 12) * Math.PI;
+  const el = Math.sin(ang);
+  const dayness = THREE.MathUtils.smoothstep(el, -0.08, 0.3);
+  const sunPos = useMemo<[number, number, number]>(
+    () => [Math.cos(ang) * 130, Math.max(6, el * 120), 45],
+    [ang, el],
+  );
+  useFrame(() => {
+    setWindowGlow(1.35 - dayness * 0.95);
+  });
+  return (
+    <>
+      <ambientLight intensity={0.16 + dayness * 0.3} />
+      <directionalLight
+        castShadow
+        position={sunPos}
+        intensity={0.1 + dayness * 1.7}
+        color={el > 0.3 ? '#ffd9a0' : '#ff9a5a'}
+        shadow-mapSize={[2048, 2048]}
+        shadow-camera-left={-75}
+        shadow-camera-right={75}
+        shadow-camera-top={75}
+        shadow-camera-bottom={-75}
+        shadow-camera-near={10}
+        shadow-camera-far={350}
+      />
+      <Sky sunPosition={sunPos} turbidity={7} rayleigh={2.2} />
+    </>
+  );
+}
+
+// ---------- economy + sim ticker ----------
+function SimTicker() {
   const acc = useRef(0);
   useFrame((_, dt) => {
     acc.current += dt;
-    if (acc.current >= 1) {
-      acc.current = 0;
+    if (acc.current >= 0.5) {
       const st = useCity.getState();
-      st.tickBill(Math.round(st.buildings.length * 4));
+      st.tickSim(acc.current);
+      st.tickBill(Math.round(st.buildings.length * acc.current * 2));
+      acc.current = 0;
     }
   });
   return null;
@@ -341,21 +399,7 @@ export function CityScene() {
     <>
       <color attach="background" args={['#0e152e']} />
       <fog attach="fog" args={['#0e152e', 110, 260]} />
-      <ambientLight intensity={0.4} />
-      <directionalLight
-        castShadow
-        position={[70, 90, 40]}
-        intensity={1.7}
-        color="#ffd9a0"
-        shadow-mapSize={[2048, 2048]}
-        shadow-camera-left={-75}
-        shadow-camera-right={75}
-        shadow-camera-top={75}
-        shadow-camera-bottom={-75}
-        shadow-camera-near={10}
-        shadow-camera-far={300}
-      />
-      <Sky sunPosition={[90, 14, -70]} turbidity={7} rayleigh={2.2} />
+      <SunRig />
       <Stars radius={280} depth={60} count={2200} factor={4} fade speed={0.6} />
       <Ground />
       <Roads />
@@ -363,7 +407,7 @@ export function CityScene() {
       <Cars />
       <Meteors />
       <Booms />
-      <Ticker />
+      <SimTicker />
       <OrbitControls
         makeDefault
         target={[0, 3, 0]}

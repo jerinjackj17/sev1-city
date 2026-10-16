@@ -8,12 +8,19 @@ export function Hud() {
   const served = useCity((s) => s.served);
   const bill = useCity((s) => s.bill);
   const lost = useCity((s) => s.lost);
-  const buildings = useCity((s) => s.buildings);
   const logs = useCity((s) => s.logs);
+  const happiness = useCity((s) => s.happiness);
+  const revenue = useCity((s) => s.revenue);
+  const time = useCity((s) => s.time);
   const deploy = useCity((s) => s.deploy);
   const strike = useCity((s) => s.strike);
 
   const uptime = (100 - lost * 0.7).toFixed(2);
+  const net = revenue - bill;
+  const hh = Math.floor(time);
+  const mm = Math.floor((time - hh) * 60);
+  const clock = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+  const happyTone = happiness > 60 ? 'bg-emerald-400' : happiness > 30 ? 'bg-amber-400' : 'bg-red-400';
 
   return (
     <div className="pointer-events-none absolute inset-0 select-none">
@@ -28,11 +35,22 @@ export function Hud() {
       </div>
 
       {/* stats */}
-      <div className="absolute right-5 top-5 flex gap-5 rounded-lg bg-black/45 px-4 py-3 backdrop-blur-sm">
+      <div className="absolute right-5 top-5 flex items-stretch gap-5 rounded-lg bg-black/45 px-4 py-3 backdrop-blur-sm">
         <Stat label="uptime" value={`${uptime}%`} tone={lost > 0 ? 'text-red-300' : 'text-emerald-300'} />
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-slate-400">citizens</div>
+          <div className="mt-1.5 h-2.5 w-24 overflow-hidden rounded-full bg-slate-700/60">
+            <div className={`h-full rounded-full transition-all ${happyTone}`} style={{ width: `${happiness}%` }} />
+          </div>
+          <div className="mt-0.5 text-[10px] tabular-nums text-slate-300">{Math.round(happiness)}% happy</div>
+        </div>
         <Stat label="requests served" value={fmt(served)} tone="text-sky-300" />
-        <Stat label="cloud bill" value={`$${fmt(bill)}/mo`} tone="text-amber-300" />
-        <Stat label="services" value={String(buildings.length)} tone="text-slate-200" />
+        <Stat
+          label="net"
+          value={`${net < 0 ? '-' : ''}$${fmt(Math.abs(Math.round(net)))}`}
+          tone={net < 0 ? 'text-red-300' : 'text-emerald-300'}
+        />
+        <Stat label="time" value={clock} tone="text-slate-200" />
       </div>
 
       {/* event log */}
