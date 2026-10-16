@@ -108,7 +108,21 @@ function BuildingMesh({ b }: { b: Building }) {
   const z = blockToWorld(b.bz);
   return (
     <group ref={ref} position={[x, 0, z]}>
-      <mesh castShadow position={[0, b.h / 2, 0]} material={districtMat(b.district)}>
+      <mesh
+        castShadow
+        position={[0, b.h / 2, 0]}
+        material={districtMat(b.district)}
+        onClick={(e) => {
+          e.stopPropagation();
+          useCity.getState().scaleUp(b.id);
+        }}
+        onPointerOver={() => {
+          document.body.style.cursor = 'pointer';
+        }}
+        onPointerOut={() => {
+          document.body.style.cursor = 'auto';
+        }}
+      >
         <boxGeometry args={[b.w, b.h, b.d]} />
       </mesh>
       <mesh castShadow position={[0, b.h + 0.18, 0]}>
@@ -168,8 +182,10 @@ function CarMesh({ spec }: { spec: CarSpec }) {
   useFrame((_, dt) => {
     const g = ref.current;
     if (!g) return;
-    const load = Math.min(1, useCity.getState().buildings.length / 28);
-    s.current += spec.speed * (1 - 0.5 * load) * dt;
+    const st = useCity.getState();
+    const load = Math.min(1, st.buildings.length / 28);
+    const slowed = performance.now() / 1000 < st.slowUntil;
+    s.current += spec.speed * (1 - 0.5 * load) * (slowed ? 0.4 : 1) * dt;
     if (s.current >= spec.per) {
       s.current -= spec.per;
       useCity.getState().serve(1 + Math.floor(Math.random() * 3));
@@ -214,9 +230,11 @@ function CarMesh({ spec }: { spec: CarSpec }) {
 }
 
 function Cars() {
+  const extraCars = useCity((s) => s.extraCars);
   const cars = useMemo<CarSpec[]>(() => {
     const arr: CarSpec[] = [];
-    for (let i = 0; i < 16; i++) {
+    const total = 16 + extraCars;
+    for (let i = 0; i < total; i++) {
       const cx = Math.floor(Math.random() * GRID);
       const cz = Math.floor(Math.random() * GRID);
       const x0 = blockToWorld(cx) - PITCH / 2;
@@ -378,7 +396,7 @@ function SunRig() {
   );
 }
 
-// ---------- economy + sim ticker ----------
+// ---------- economy + sim + chaos ticker ----------
 function SimTicker() {
   const acc = useRef(0);
   useFrame((_, dt) => {
@@ -387,6 +405,7 @@ function SimTicker() {
       const st = useCity.getState();
       st.tickSim(acc.current);
       st.tickBill(Math.round(st.buildings.length * acc.current * 2));
+      if (performance.now() / 1000 > st.nextChaos) st.triggerChaos();
       acc.current = 0;
     }
   });

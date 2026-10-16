@@ -4,6 +4,12 @@ function fmt(n: number): string {
   return n.toLocaleString('en-US');
 }
 
+function fmtClock(t: number): string {
+  const hh = Math.floor(t);
+  const mm = Math.floor((t - hh) * 60);
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
 export function Hud() {
   const served = useCity((s) => s.served);
   const bill = useCity((s) => s.bill);
@@ -14,6 +20,7 @@ export function Hud() {
   const time = useCity((s) => s.time);
   const deploy = useCity((s) => s.deploy);
   const strike = useCity((s) => s.strike);
+  const rollback = useCity((s) => s.rollback);
 
   const uptime = (100 - lost * 0.7).toFixed(2);
   const net = revenue - bill;
@@ -60,7 +67,7 @@ export function Hud() {
             key={l.id}
             className="rounded bg-black/45 px-2.5 py-1 text-[11px] leading-snug text-slate-200 backdrop-blur-sm"
           >
-            <span className="mr-1.5 text-amber-400/80">›</span>
+            <span className="mr-1.5 text-amber-400/80 tabular-nums">{fmtClock(l.at)}</span>
             {l.text}
           </div>
         ))}
@@ -75,6 +82,12 @@ export function Hud() {
           ＋ Deploy service
         </button>
         <button
+          onClick={rollback}
+          className="rounded-lg bg-sky-500/90 px-6 py-3 text-sm font-bold text-white shadow-[0_4px_20px_rgba(56,189,248,0.4)] transition hover:bg-sky-400 active:scale-95"
+        >
+          ↩ Rollback
+        </button>
+        <button
           onClick={strike}
           className="rounded-lg bg-red-500/90 px-6 py-3 text-sm font-bold text-white shadow-[0_4px_20px_rgba(239,68,68,0.4)] transition hover:bg-red-400 active:scale-95"
         >
@@ -83,8 +96,10 @@ export function Hud() {
       </div>
 
       {/* hint */}
-      <div className="absolute bottom-5 right-5 text-[11px] text-slate-400/80">
+      <div className="absolute bottom-5 right-5 text-right text-[11px] leading-relaxed text-slate-400/80">
         drag to orbit · scroll to zoom
+        <br />
+        click a building to scale it up ($800)
       </div>
     </div>
   );

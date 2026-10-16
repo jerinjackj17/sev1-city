@@ -71,12 +71,13 @@ A sarcastic on-call veteran who:
 
 ## Build phases
 
-- **Phase 0 — Foundation (now)**: 3D city renders, procedural
+- **Phase 0 — Foundation (done)**: 3D city renders, procedural
   buildings, roads, animated request cars, orbit camera, deploy-a-
   building and meteor-strike toys, HUD.
-- **Phase 1 — Simulation**: citizens/requests as agents, service
-  health, latency as traffic, budget ticking, day/night cycle,
-  happiness meter.
+- **Phase 1 — Simulation (done)**: day/night cycle with sun rig and
+  glowing windows at night, building health + damage beacons + splash
+  damage, citizen happiness meter, revenue vs cloud bill, traffic that
+  slows under load, in-game clock.
 - **Phase 2 — Chaos engine**: event deck, disasters with visuals,
   incident timeline feed, response tools (scale, reroute, rollback).
 - **Phase 3 — AI commander**: LLM narration, per-incident advice,

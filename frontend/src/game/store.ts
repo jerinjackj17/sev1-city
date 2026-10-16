@@ -39,6 +39,7 @@ export interface Boom {
 export interface LogEntry {
   id: number;
   text: string;
+  at: number;
 }
 
 // ---- city layout ----
@@ -114,6 +115,9 @@ interface CityState {
   time: number;
   happiness: number;
   revenue: number;
+  slowUntil: number;
+  extraCars: number;
+  nextChaos: number;
   deploy: () => void;
   strike: () => void;
   impact: (m: Meteor) => void;
@@ -121,23 +125,30 @@ interface CityState {
   serve: (n: number) => void;
   tickBill: (n: number) => void;
   tickSim: (dt: number) => void;
+  scaleUp: (id: number) => void;
+  rollback: () => void;
+  triggerChaos: () => void;
 }
 
 function pushLog(logs: LogEntry[], text: string): LogEntry[] {
-  return [{ id: nid(), text }, ...logs].slice(0, 6);
+  // useCity is declared below; this only runs after the store exists.
+  return [{ id: nid(), text, at: useCity.getState().time }, ...logs].slice(0, 6);
 }
 
 export const useCity = create<CityState>((set, get) => ({
   buildings: seedCity(),
   meteors: [],
   booms: [],
-  logs: [{ id: 0, text: 'welcome to SEV-1 CITY. nothing is on fire. yet.' }],
+  logs: [{ id: 0, text: 'welcome to SEV-1 CITY. nothing is on fire. yet.', at: 9.5 }],
   served: 0,
   bill: 1200,
   lost: 0,
   time: 9.5,
   happiness: 82,
   revenue: 0,
+  slowUntil: 0,
+  extraCars: 0,
+  nextChaos: 55,
 
   deploy: () => {
     const { buildings, logs } = get();
@@ -226,5 +237,75 @@ export const useCity = create<CityState>((set, get) => ({
       time: (s.time + dt * 0.2) % 24,
       happiness: Math.max(0, Math.min(100, s.happiness + (70 - s.happiness) * dt * 0.02)),
     });
+  },
+
+  scaleUp: (id: number) => {
+    const s = get();
+    const b = s.buildings.find((x) => x.id === id);
+    if (!b) return;
+    set({
+      buildings: s.buildings.map((x) =>
+        x.id === id
+          ? { ...x, h: Math.min(26, x.h + 5), w: x.w + 1, d: x.d + 1, health: Math.min(100, x.health + 30), born: performance.now() / 1000 - 0.4 }
+          : x,
+      ),
+      bill: s.bill + 800,
+      logs: pushLog(s.logs, `scaled up ${b.district}. +$800. the cloud thanks you.`),
+    });
+  },
+
+  rollback: () => {
+    const s = get();
+    if (!s.buildings.length) {
+      set({ logs: pushLog(s.logs, 'nothing to roll back. suspiciously clean.') });
+      return;
+    }
+    const newest = s.buildings.reduce((a, b) => (a.born > b.born ? a : b));
+    set({
+      buildings: s.buildings.filter((x) => x.id !== newest.id),
+      bill: s.bill + 200,
+      logs: pushLog(s.logs, `rolled back ${newest.district}. like it never happened. (it happened.)`),
+    });
+  },
+
+  triggerChaos: () => {
+    const s = get();
+    if (s.buildings.length < 4) return;
+    const roll = Math.random();
+    const now = performance.now() / 1000;
+    if (roll < 0.35) {
+      // rush hour: everything slows down
+      set({
+        slowUntil: now + 25,
+        extraCars: 10,
+        logs: pushLog(s.logs, 'RUSH HOUR: traffic spike. the roads are soup.'),
+      });
+      setTimeout(() => {
+        const cur = get();
+        set({ extraCars: Math.max(0, cur.extraCars - 10) });
+      }, 25000);
+    } else if (roll < 0.7) {
+      // meteor shower: region outage
+      set({ logs: pushLog(s.logs, 'REGION OUTAGE: meteor shower inbound. say goodbye to a district.') });
+      const api = get();
+      api.strike();
+      setTimeout(() => get().strike(), 1200);
+      setTimeout(() => get().strike(), 2400);
+    } else {
+      // dependency failure: databases go dark
+      const dbs = s.buildings.filter((b) => b.district === 'db');
+      if (!dbs.length) {
+        get().strike();
+        return;
+      }
+      set({
+        buildings: s.buildings.map((b) =>
+          b.district === 'db' ? { ...b, health: 22 } : b,
+        ),
+        happiness: Math.max(0, s.happiness - 8),
+        logs: pushLog(s.logs, 'DEPENDENCY DOWN: the database district went dark. everything is waiting on it.'),
+      });
+    }
+    set({ nextChaos: now + 45 + Math.random() * 30 });
   },
 }));
